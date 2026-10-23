@@ -9,8 +9,11 @@
 #   - Fixed: Invalid IP in loop uses continue instead of exit 1
 #   - Added: VS Code WebView/Service Worker domains
 #   - Added: Groq, Anthropic, npm registry domains
-
 set -euo pipefail
+
+readonly PROJECT_WORKSPACE=/workspace
+readonly EXPECTED_USER="${1:-${EXPECTED_USER:-node}}"
+
 IFS=$'\n\t'
 
 # ─── 1. Extrair regras DNS do Docker ANTES de limpar ─────────────────────────
@@ -40,7 +43,10 @@ iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
 iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
 iptables -A INPUT  -p udp --sport 53 -j ACCEPT
 iptables -A OUTPUT -p tcp --dport 22 -j ACCEPT
+iptables -A OUTPUT -p tcp --dport 18789 -j ACCEPT
+iptables -A INPUT  -p tcp --sport 18789 -m state --state ESTABLISHED -j ACCEPT
 iptables -A INPUT  -p tcp --sport 22 -m state --state ESTABLISHED -j ACCEPT
+
 iptables -A INPUT  -i lo -j ACCEPT
 iptables -A OUTPUT -o lo -j ACCEPT
 
@@ -51,9 +57,7 @@ ipset create allowed-domains hash:net
 # Necessário para curl buscar ranges do GitHub antes do ipset estar populado
 iptables -A OUTPUT -p tcp --dport 443 -j ACCEPT
 iptables -A OUTPUT -p tcp --dport 80  -j ACCEPT
-iptables -A OUTPUT -p tcp --dport 4200  -j ACCEPT
-iptables -A OUTPUT -p tcp --dport 5000  -j ACCEPT
-iptables -A OUTPUT -p tcp --dport 9876  -j ACCEPT
+iptables -A OUTPUT -p tcp --dport 18789  -j ACCEPT
 iptables -A INPUT  -m state --state ESTABLISHED,RELATED -j ACCEPT
 
 echo "Processing GitHub IPs..."
@@ -104,6 +108,13 @@ ALLOWED_DOMAINS=(
     "origin-tracker.githubusercontent.com"
     "copilot-telemetry.githubusercontent.com"
     "collector.github.com"
+    "chat.openai.com"    
+    "cdn.oaistatic.com"
+    "persistent.oaistatic.com"
+    "files.oaiusercontent.com"
+    "chatgptusercontent.com"
+    "ab.chatgpt.com"
+
 
     # npm
     "registry.npmjs.org"
@@ -114,26 +125,6 @@ ALLOWED_DOMAINS=(
 
     # Groq
     "api.groq.com"
-
-    # OpenAI
-    "api.openai.com"
-    "chatgpt.com"
-    "chat.openai.com"
-    "auth.openai.com"
-    "cdn.oaistatic.com"
-    "persistent.oaistatic.com"
-    "files.oaiusercontent.com"
-    "chatgptusercontent.com"
-    "ab.chatgpt.com"
-
-
-    # Blackbox AI
-    "blackbox.ai"
-    "api.blackbox.ai"
-    "cdn.blackbox.ai"
-    "assets.blackbox.ai"
-    "chat.blackbox.ai"
-    "app.blackbox.ai"
 
     # Microsoft / VS Code marketplace e updates
     "login.microsoftonline.com"
@@ -177,9 +168,8 @@ ALLOWED_DOMAINS=(
 
             iptables -D OUTPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null || true
             iptables -D OUTPUT -p tcp --dport 80  -j ACCEPT 2>/dev/null || true
-            iptables -D INPUT -p tcp --dport 4200 -j ACCEPT
-            iptables -D INPUT -p tcp --dport 5000 -j ACCEPT
-            iptables -D INPUT -p tcp --dport 9876 -j ACCEPT
+            iptables -D OUTPUT -p tcp --dport 18789  -j ACCEPT 2>/dev/null || true
+
             iptables -D INPUT  -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
 
             break
@@ -222,6 +212,28 @@ echo "Host network detected as: $HOST_NETWORK"
 iptables -A INPUT  -s "$HOST_NETWORK" -j ACCEPT
 iptables -A OUTPUT -d "$HOST_NETWORK" -j ACCEPT
 
+
+# ─── 10.1 Garantir acesso explícito ao host na porta 18789 (WebSocket) ──────
+# host.docker.internal normalmente resolve para o mesmo IP do gateway padrão
+# (HOST_IP, calculado na seção 10). A regra de HOST_NETWORK já libera esse
+# range inteiro, mas aqui fixamos a porta explicitamente por clareza e para
+# não depender de o serviço estar na mesma sub-rede /24.
+echo "Adding explicit rule for host WebSocket service on port 18789..."
+iptables -A OUTPUT -d "$HOST_IP" -p tcp --dport 18789 -j ACCEPT
+iptables -A INPUT  -s "$HOST_IP" -p tcp --sport 18789 -m state --state ESTABLISHED -j ACCEPT
+
+# Se o container resolver "host.docker.internal" para outro IP (ex: Docker
+# Desktop no Mac/Windows usa um IP virtual dedicado), garanta que ele também
+# está liberado:
+if getent hosts host.docker.internal >/dev/null 2>&1; then
+    HDI_IP=$(getent hosts host.docker.internal | awk '{print $1}' | head -n1)
+    if [[ "$HDI_IP" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] && [ "$HDI_IP" != "$HOST_IP" ]; then
+        echo "Adding host.docker.internal IP $HDI_IP for port 18789"
+        iptables -A OUTPUT -d "$HDI_IP" -p tcp --dport 18789 -j ACCEPT
+        iptables -A INPUT  -s "$HDI_IP" -p tcp --sport 18789 -m state --state ESTABLISHED -j ACCEPT
+    fi
+fi
+
 # ─── 11. Políticas padrão DROP ───────────────────────────────────────────────
 iptables -P INPUT   DROP
 iptables -P FORWARD DROP
@@ -235,4 +247,4 @@ iptables -A OUTPUT -j REJECT --reject-with icmp-admin-prohibited
 iptables -A INPUT  -j DROP
 
 # ─── 13. Verificação final ───────────────────────────────────────────────────
-echo "Firewall configuration complete"
+echo "🛡️ Firewall configuration complete"

@@ -1,12 +1,26 @@
 {
-  "name": "Ai Assistants",
+  "name": "jail-devcontainer",
   "dockerComposeFile": "docker-compose.yml",
-  "service": "dev",
-  "workspaceFolder": "/workspaces",
+  "service": "jail-devcontainer",
+  "workspaceFolder": "/workspace",
   "remoteUser": "node",
   "updateRemoteUserUID": true,
-  //"postCreateCommand": "",
-  "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
+  "overrideCommand": true,
+  "initializeCommand": "f=$(ls -t \"${XDG_RUNTIME_DIR}\"/.mutter-Xwaylandauth.* 2>/dev/null | head -n1); if [ -n \"$f\" ]; then cp \"$f\" .devcontainer/.xauth-devc; else : > .xauth-devc; fi",
+  "postCreateCommand": "bash setup-codex.sh",
+  "updateContentCommand": "sudo post-start.sh",
+  "waitFor": "updateContentCommand",
+  "containerEnv": {
+    "IN_DEVCONTAINER": "true",
+    "DISPLAY": "${localEnv:DISPLAY}",
+    "XAUTHORITY": "/tmp/.xauth-devc"
+  },
+  "mounts": [
+    "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind",
+    "source=${localWorkspaceFolder}/.devcontainer/.xauth-devc,target=/tmp/.xauth-devc,type=bind,readonly",
+    "type=volume,target=/home/node/.vscode-server",
+    "source=${localEnv:HOME}/.ssh,target=/home/node/.ssh,type=bind"
+  ],
   "customizations": {
     "vscode": {
       "extensions": [

@@ -1,11 +1,11 @@
 {
   "folders": [
     {
-      "name": "workspaces",
+      "name": "workspace",
       "path": "."
     },
     {
-      "name": ".jail-container",
+      "name": ".jail-devcontainer",
       "path": "."
     }
   ],

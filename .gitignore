@@ -1,2 +1,11 @@
 **/workspaces/*
 **/.claude
+**/.gemini/
+**/.codex/
+**/.ai/
+**.env
+**/.xauth-devc
+**/core.*
+**/AGENTS.md
+**/GEMINI.md
+**/pull-request/*.md

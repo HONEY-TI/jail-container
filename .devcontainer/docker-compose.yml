@@ -1,12 +1,27 @@
+#docker run --rm -it --entrypoint /bin/bash jail-devcontainer:latest
+
 services:
-  dev:
-    container_name: jail-container
+  jail-devcontainer:
+    container_name: jail-devcontainer
+    image: jail-devcontainer:latest
+    tty: true
+    stdin_open: true
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+      args:
+        USERNAME: node
+        WORKSPACE: /workspace
+    working_dir: /workspace
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=4096"
+      XAUTHORITY: /tmp/.xauth-devc
+      GITHUB_TOKEN: ${GITHUB_TOKEN:?GITHUB_TOKEN não definido no .env}
+    env_file:
+      - .env
     volumes:
-      - ../workspaces:/workspaces:cached
-      - vscode-extensions:/home/node/.vscode-server/extensions
+      - ../:/workspace:cached
+      - vscode-extensions-jail:/home/node/.vscode-server/extensions
       - node_modules:/workspaces/node_modules
       - angular_cache:/workspaces/.angular
       - py_tmp:/tmp
@@ -37,7 +52,7 @@ services:
           memory: 4G
 
 volumes:
-  vscode-extensions:
+  vscode-extensions-jail:
   node_modules:
   angular_cache:
   py_tmp:
